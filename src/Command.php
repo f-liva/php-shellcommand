@@ -398,7 +398,7 @@ class Command
         if ($this->useExec || $this->useSsh) {
             $execCommand = $this->captureStdErr ? "$command 2>&1" : $command;
 
-            if ($this->useSsh && extension_loaded('ssh2)) {
+            if ($this->useSsh && extension_loaded('ssh2')) {
                 $connection = ssh2_connect(getenv('PDFTK_SSH_HOST'), getenv('PDFTK_SSH_PORT'));
 
                 if (! $connection) {
