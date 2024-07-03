@@ -51,6 +51,11 @@ class Command
     public $useExec = false;
 
     /**
+     * @var bool executes the command via SSH when local execution results in problems.
+     */
+    public $useSsh = false;
+
+    /**
      * @var bool whether to capture stderr (2>&1) when `useExec` is true. This
      * will try to redirect the stderr to stdout and provide the complete
      * output of both in `getStdErr()` and `getError()`.  Default is `true`.
@@ -390,9 +395,45 @@ class Command
             return false;
         }
 
-        if ($this->useExec) {
+        if ($this->useExec || $this->useSsh) {
             $execCommand = $this->captureStdErr ? "$command 2>&1" : $command;
-            exec($execCommand, $output, $this->_exitCode);
+
+            if ($this->useSsh && extension_loaded('ssh2)) {
+                $connection = ssh2_connect(getenv('PDFTK_SSH_HOST'), getenv('PDFTK_SSH_PORT'));
+
+                if (! $connection) {
+                    $this->_error = "Cannot enstablish connection through SSH";
+                    return false;
+                }
+
+                if (! ssh2_auth_password($connection, getenv('PDFTK_SSH_USER'), getenv('PDFTK_SSH_PASSWORD'))) {
+                    $this->_error = "Cannot authenticate SSH";
+                    return false;
+                }
+
+                $stream = ssh2_exec($connection, $execCommand);
+                $errorStream = ssh2_fetch_stream($stream, SSH2_STREAM_STDERR);
+
+                // Enable blocking for both streams
+                stream_set_blocking($stream, true);
+                stream_set_blocking($errorStream, true);
+
+                // Whichever of the two below commands is listed first will receive its appropriate output.  The second command receives nothing
+                $output = stream_get_contents($stream);
+                $error = stream_get_contents($errorStream);
+                $this->_exitCode = (int) ! empty($error);
+
+                if ($error) {
+                    $this->_stdOut = $error;
+                }
+
+                // Close the streams
+                fclose($steam);
+                fclose($errorStream);
+            } else {
+                exec($execCommand, $output, $this->_exitCode);
+            }
+
             $this->_stdOut = implode("\n", $output);
             if ($this->_exitCode !== 0) {
                 $this->_stdErr = $this->_stdOut;
